@@ -5,7 +5,9 @@
 #include <time.h>
 
 TideManager::TideManager(WiFiClientSecure& client) 
-    : _client(client), _currentLevel(0), _minLevel(-2.0), _maxLevel(7.0) {}
+    : _client(client), _currentLevel(0), _previousLevel(0),
+      _minLevel(-2.0), _maxLevel(7.0), _trend(TIDE_UNKNOWN),
+      _lastUpdateTime(0) {}
 
 void TideManager::update() {
     fetchData();
@@ -29,58 +31,80 @@ bool TideManager::isHighTide() const {
 
 void TideManager::fetchData() {
     if (WiFi.status() == WL_CONNECTED) {
-        HTTPClient http;
+        // Obtenir le niveau actuel
+        float currentLevel = fetchLevelAtTime(0);  // 0 = maintenant
         
-        // Create URL with current timestamp
-        char fullURL[200];
-        time_t now;
-        time(&now);
-        struct tm timeinfo;
-        gmtime_r(&now, &timeinfo);
-        char timeStr[30];
-        strftime(timeStr, sizeof(timeStr), "%Y-%m-%dT%H%%3A%M%%3A00Z", &timeinfo);
-        
-        sprintf(fullURL, "%s%s", TIDE_URL, timeStr);
-        
-        Serial.println("\n=== Updating tide data ===");
-        Serial.print("URL: ");
-        Serial.println(fullURL);
-        
-        http.begin(_client, fullURL);
-        
-        int httpResponseCode = http.GET();
-        Serial.print("HTTP Response code: ");
-        Serial.println(httpResponseCode);
-        
-        if (httpResponseCode > 0) {
-            String payload = http.getString();
-            Serial.println("Response received:");
-            Serial.println(payload);
+        // Si c'est le premier appel, obtenir aussi le niveau précédent
+        if (_lastUpdateTime == 0) {
+            Serial.println("\nInitializing tide direction...");
+            // Obtenir le niveau 15 minutes avant
+            float previousLevel = fetchLevelAtTime(-15);
+            _previousLevel = previousLevel;
+            _currentLevel = currentLevel;
             
-            DynamicJsonDocument doc(2048);
-            DeserializationError error = deserializeJson(doc, payload);
+            float difference = _currentLevel - _previousLevel;
+            Serial.println("\n=== Initial Tide Status ===");
+            Serial.printf("Level 15min ago: %.2f m\n", _previousLevel);
+            Serial.printf("Current level:   %.2f m\n", _currentLevel);
+            Serial.printf("Change:          %.2f m\n", difference);
             
-            if (!error) {
-                if (doc["responseItems"][0]["status"] == "OK") {
-                    _currentLevel = doc["responseItems"][0]["waterLevel"].as<float>();
-                    Serial.print("Current tide level: ");
-                    Serial.println(_currentLevel);
-                } else {
-                    Serial.println("Non-OK status in response");
-                    Serial.println(doc["responseItems"][0]["status"].as<const char*>());
-                }
+            if (difference > 0.01) {
+                _trend = TIDE_RISING;
+                Serial.println("Initial Status: 🌊 TIDE IS RISING ⬆️");
+            } else if (difference < -0.01) {
+                _trend = TIDE_FALLING;
+                Serial.println("Initial Status: 🌊 TIDE IS FALLING ⬇️");
             } else {
-                Serial.print("JSON Error: ");
-                Serial.println(error.c_str());
+                _trend = TIDE_UNKNOWN;
+                Serial.println("Initial Status: 🌊 TIDE IS STABLE ➡️");
             }
+            Serial.println("========================\n");
         } else {
-            Serial.print("HTTP Error: ");
-            Serial.println(httpResponseCode);
+            _previousLevel = _currentLevel;
+            _currentLevel = currentLevel;
+            // ... reste du code existant pour l'affichage du statut ...
         }
         
-        http.end();
-        Serial.println("=== Tide data update complete ===\n");
-    } else {
-        Serial.println("WiFi not connected!");
+        _lastUpdateTime = millis();
     }
+}
+
+float TideManager::fetchLevelAtTime(int minutesOffset) {
+    char fullURL[200];
+    time_t now;
+    time(&now);
+    now += minutesOffset * 60;  // Ajouter l'offset en secondes
+    
+    struct tm timeinfo;
+    gmtime_r(&now, &timeinfo);
+    char timeStr[30];
+    strftime(timeStr, sizeof(timeStr), "%Y-%m-%dT%H%%3A%M%%3A00Z", &timeinfo);
+    
+    sprintf(fullURL, "%s%s", TIDE_URL, timeStr);
+    
+    Serial.print("Fetching tide level for: ");
+    Serial.println(timeStr);
+    
+    HTTPClient http;
+    http.begin(_client, fullURL);
+    
+    float level = 0.0;
+    int httpResponseCode = http.GET();
+    
+    if (httpResponseCode > 0) {
+        String payload = http.getString();
+        DynamicJsonDocument doc(2048);
+        DeserializationError error = deserializeJson(doc, payload);
+        
+        if (!error && doc["responseItems"][0]["status"] == "OK") {
+            level = doc["responseItems"][0]["waterLevel"].as<float>();
+        }
+    }
+    
+    http.end();
+    return level;
+}
+
+TideManager::TideDirection TideManager::getTideTrend() const {
+    return _trend;
 }

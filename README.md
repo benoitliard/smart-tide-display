@@ -13,6 +13,10 @@ An ESP32-based LED strip project that displays real-time tide levels and beach c
   - 🟢 Normal tide (Green)
   - 🟡 High tide (Yellow)
   - 🔴 Very high tide (Red)
+- 💫 Dynamic tide direction indication:
+  - Rising tide: Smooth upward light animation
+  - Falling tide: Smooth downward light animation
+  - Initial direction detection using historical data
 - 💫 Special pulsing effect when conditions are perfect for swimming
 
 ## 🛠️ Hardware Requirements

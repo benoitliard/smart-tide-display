@@ -47,9 +47,10 @@ void setup() {
 
 void loop() {
     static unsigned long lastUpdate = 0;
+    static unsigned long lastDisplay = 0;
     unsigned long currentMillis = millis();
     
-    // Data update every 15 minutes
+    // Mise à jour des données toutes les minutes
     if (currentMillis - lastUpdate > 60000) {
         Serial.println("\n=== Periodic Update ===");
         tideManager.update();
@@ -58,17 +59,21 @@ void loop() {
         Serial.println("=== Update Complete ===\n");
     }
     
-    // Display
-    if (weatherManager.getTemperature() >= SWIM_TEMP_MIN && 
-        tideManager.isHighTide() && 
-        !weatherManager.isRaining()) {
-        ledController.displaySwimCondition();
-    } else {
-        ledController.displayTideLevel(
-            tideManager.getCurrentLevel(),
-            tideManager.getMinLevel(),
-            tideManager.getMaxLevel()
-        );
+    // Mise à jour de l'affichage plus fréquemment (toutes les 20ms)
+    if (currentMillis - lastDisplay > 20) {
+        if (weatherManager.getTemperature() >= SWIM_TEMP_MIN && 
+            tideManager.isHighTide() && 
+            !weatherManager.isRaining()) {
+            ledController.displaySwimCondition();
+        } else {
+            ledController.displayTideLevel(
+                tideManager.getCurrentLevel(),
+                tideManager.getMinLevel(),
+                tideManager.getMaxLevel(),
+                tideManager.getTideTrend()
+            );
+        }
+        lastDisplay = currentMillis;
     }
     
     delay(10);
